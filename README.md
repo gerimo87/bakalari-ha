@@ -31,6 +31,11 @@ nastaveným senzorem na `Nástěnka`
 - Rozvrh
   - tento senzor stahuje rozvrh na aktuální týden +- 7 dní
 
+- Akce
+  - senzor stahuje školní akce (`GET /api/3/events`) od dnes − 14 dní dál
+  - kalendářová entita `calendar.Akce - <dítě>` zobrazuje akce v HA kalendáři
+    (celodenní i časově ohraničené)
+
 - Známky
   - každý předmět má nyní svůj vlastní senzor
   - lze podepisovat známky - buď jednotlivě u každé známky nebo hromadně v záhlaví Lovelace karty\
@@ -152,6 +157,9 @@ action:
 - `bakalari.refresh_timetable`
   - Popis: Okamžitě obnoví data rozvrhu.
 
+- `bakalari.refresh_events`
+  - Popis: Okamžitě obnoví data školních akcí.
+
 Příklady volání:
 ```yaml
 service: bakalari.mark_as_seen
@@ -182,6 +190,10 @@ Využij v Dev Tools → WebSocket, nebo z vlastních frontend karet.
   - Payload: `config_entry_id` (string), `child_key` (volitelné), `limit` (volitelné, default 3)
   - Výsledek: `{ "items": [ ... ] }` – seznam týdnů rozvrhu (aktuální, +1 týden, -1 týden).
 
+- `bakalari/get_events`
+  - Payload: `config_entry_id` (string), `child_key` (volitelné), `limit` (volitelné, default 50)
+  - Výsledek: `{ "items": [ ... ] }` – seznam školních akcí.
+
 Příklad požadavku/odpovědi:
 ```json
 { "id": 1, "type": "bakalari/get_marks", "config_entry_id": "<entry_id>", "limit": 25 }
@@ -195,6 +207,7 @@ Příklad požadavku/odpovědi:
 - Známky: klíč `scan_interval` (sekundy), výchozí 900 s. Probíhá s jitterem ±10 % kvůli omezení špiček.
 - Zprávy: klíč `scan_interval_messages` (sekundy), výchozí 3600 s. Také s jitterem ±10 %.
 - Rozvrh: klíč `scan_interval_timetable` (sekundy), výchozí 21600 s (6 h). Také s jitterem ±10 %.
+- Akce: klíč `scan_interval_events` (sekundy), výchozí 21600 s (6 h). Také s jitterem ±10 %.
 
 Poznámky:
 - Intervaly se aplikují per koordinátor. Pokud nejsou klíče v options přítomné, použijí se výchozí hodnoty.
@@ -260,6 +273,17 @@ Níže je stručný přehled vytvářených entit a jejich stavů/atributů.
   - Zobrazuje jednotlivé hodiny v daném období (aktuální týden, +1 a -1 týden)
   - Vlastnosti událostí: `start`, `end`, `summary` (předmět), `description` (učitel, skupiny, téma, změny), `location` (učebna)
 
+- Akce – `sensor.Akce - <dítě>`
+  - Stav: počet akcí v cache
+  - Atributy:
+    - `child_key`: identifikátor dítěte
+    - `events`: seznam akcí (id, title, description, times, event_type, teachers, rooms, …)
+    - `total_events_cached`: počet akcí v cache
+
+- Akce – kalendářová entita `calendar.Akce - <dítě>`
+  - Zobrazuje školní akce (exkurze, schůzky, …) stažené z `/api/3/events`
+  - Vlastnosti událostí: `start`, `end`, `summary` (název), `description` (typ, popis, učitelé), `location` (místnost)
+
 Poznámky:
 - Každá známka i zpráva je anotovaná příznakem `is_new` (in-memory per dítě). Po restartu HA se nové položky mohou dočasně chovat jako „nové“, dokud proběhne první diff.
 - Pro potlačení „novosti“ lze použít služby `bakalari.mark_as_seen` a `bakalari.mark_message_as_seen` (viz výše).
@@ -287,6 +311,12 @@ Tyto struktury najdeš v `coordinator.data`. Klíče jsou stabilní API pro senz
   - `permanent_timetable_by_child`: mapování `child_key` → „permanentní“ rozvrh (pokud škola poskytuje)
   - `timetable_window_dates`: mapování `child_key` → `list[ISO date]` – jaké dny byly načteny
   - `last_sync_ok`: boolean
+
+- Koordinátor akcí
+  - `events_by_child`: mapování `child_key` → `list[event]` – normalizované školní akce
+  - `events_since`: ISO datum dolní hranice filtru `from`
+  - `last_sync_ok`: boolean
+  - Položka `event`: `id`, `title`, `description`, `note`, `event_type`, `times` (`whole_day`, `start`, `end`), `teachers`, `rooms`, `classes`, `date_changed`
 
 Doporučení:
 - Pro zobrazování použij `marks_by_child` (již obsahuje `is_new`), pro odvozování novinek v automatizacích se spolehni na události `bakalari_new_mark` a `bakalari_new_message`.

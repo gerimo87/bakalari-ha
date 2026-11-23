@@ -17,6 +17,7 @@ import voluptuous as vol
 from .api import BakalariClient
 from .children import ChildrenIndex
 from .const import DOMAIN, MANUFACTURER, MODEL, PLATFORMS, SW_VERSION
+from .coordinator_events import BakalariEventsCoordinator
 from .coordinator_marks import BakalariMarksCoordinator
 from .coordinator_messages import BakalariMessagesCoordinator
 from .coordinator_noticeboard import BakalariNoticeboardCoordinator
@@ -142,6 +143,9 @@ def _register_services(hass: HomeAssistant, entry: ConfigEntry) -> None:
     async def _srv_refresh_timetable(call) -> None:  # noqa: ARG001
         await hass.data[DOMAIN][entry.entry_id]["timetable"].async_refresh()
 
+    async def _srv_refresh_events(call) -> None:  # noqa: ARG001
+        await hass.data[DOMAIN][entry.entry_id]["events"].async_refresh()
+
     async def _srv_sign_marks(call) -> None:
         child_key = call.data["child_key"]
         coord: BakalariMarksCoordinator = hass.data[DOMAIN][entry.entry_id]["marks"]
@@ -158,6 +162,7 @@ def _register_services(hass: HomeAssistant, entry: ConfigEntry) -> None:
     hass.services.async_register(DOMAIN, "mark_message_as_seen", _srv_mark_message_seen)
     hass.services.async_register(DOMAIN, "refresh_messages", _srv_refresh_messages)
     hass.services.async_register(DOMAIN, "refresh_timetable", _srv_refresh_timetable)
+    hass.services.async_register(DOMAIN, "refresh_events", _srv_refresh_events)
     hass.services.async_register(DOMAIN, "sign_all_marks", _srv_sign_marks)
 
 
@@ -218,6 +223,24 @@ def _register_websocket(hass: HomeAssistant, entry: ConfigEntry) -> None:
 
     websocket_api.async_register_command(hass, ws_get_timetable)
 
+    @websocket_api.websocket_command(  # type: ignore[attr-defined]
+        {
+            vol.Required("type"): f"{DOMAIN}/get_events",
+            vol.Required("config_entry_id"): str,
+            vol.Optional("child_key"): str,
+            vol.Optional("limit", default=50): int,
+        }
+    )
+    @websocket_api.async_response  # type: ignore[attr-defined]
+    async def ws_get_events(hass_, connection, msg):  # noqa: ANN001
+        ceid = msg["config_entry_id"]
+        limit = msg.get("limit", 50)
+        child_key = msg.get("child_key")
+        data = hass.data[DOMAIN][ceid]["events"].select_events(child_key, limit)
+        connection.send_result(msg["id"], {"items": data})
+
+    websocket_api.async_register_command(hass, ws_get_events)
+
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up of Bakalari component."""
@@ -245,6 +268,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     coord_noticeboard: BakalariNoticeboardCoordinator = BakalariNoticeboardCoordinator(
         hass, entry, children, _clients
     )
+    coord_events = BakalariEventsCoordinator(hass, entry, children, _clients)
 
     hass.data.setdefault(DOMAIN, {})
     hass.data[DOMAIN][entry.entry_id] = {
@@ -254,6 +278,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         "messages": coord_msgs,
         "timetable": coord_tt,
         "noticeboard": coord_noticeboard,
+        "events": coord_events,
     }
 
     # Do the first refresh in parallel
@@ -262,6 +287,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         coord_msgs.async_config_entry_first_refresh(),
         coord_tt.async_config_entry_first_refresh(),
         coord_noticeboard.async_config_entry_first_refresh(),
+        coord_events.async_config_entry_first_refresh(),
     )
 
     # Device Registry

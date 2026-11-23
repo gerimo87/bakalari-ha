@@ -10,6 +10,7 @@ import logging
 from time import time
 from typing import Any, Literal, TypeVar
 
+from aiohttp import hdrs
 from async_bakalari_api import Bakalari, Komens, Marks, Timetable
 from async_bakalari_api.datastructure import Credentials
 from async_bakalari_api.exceptions import Ex
@@ -42,6 +43,89 @@ _reauth_state: dict[str, float] = {}
 
 
 T = TypeVar("T")
+
+
+def _normalize_item(raw: Any) -> dict[str, str] | None:
+    """Normalize Bakaláři {Id, Abbrev, Name} object to a plain dict."""
+    if not isinstance(raw, dict):
+        return None
+    item_id = raw.get("Id") or raw.get("id") or ""
+    abbrev = raw.get("Abbrev") or raw.get("abbrev") or ""
+    name = raw.get("Name") or raw.get("name") or ""
+    if not (item_id or abbrev or name):
+        return None
+    return {"id": str(item_id), "abbrev": str(abbrev), "name": str(name)}
+
+
+def _normalize_items(raw: Any) -> list[dict[str, str]]:
+    """Normalize a list of Bakaláři item objects."""
+    if not isinstance(raw, list):
+        return []
+    out: list[dict[str, str]] = []
+    for item in raw:
+        normalized = _normalize_item(item)
+        if normalized is not None:
+            out.append(normalized)
+    return out
+
+
+def _normalize_event_times(raw: Any) -> list[dict[str, Any]]:
+    """Normalize Events[].Times entries."""
+    if not isinstance(raw, list):
+        return []
+    times: list[dict[str, Any]] = []
+    for entry in raw:
+        if not isinstance(entry, dict):
+            continue
+        times.append(
+            {
+                "whole_day": bool(
+                    entry.get("WholeDay", entry.get("whole_day", False))
+                ),
+                "start": entry.get("StartTime") or entry.get("start"),
+                "end": entry.get("EndTime") or entry.get("end"),
+            }
+        )
+    return times
+
+
+def _normalize_events_payload(raw: Any) -> list[dict[str, Any]]:
+    """Parse /api/3/events JSON into a list of normalized event dicts."""
+    if not isinstance(raw, dict):
+        return []
+    events_raw = raw.get("Events") or raw.get("events") or []
+    if not isinstance(events_raw, list):
+        return []
+
+    events: list[dict[str, Any]] = []
+    for item in events_raw:
+        if not isinstance(item, dict):
+            continue
+        event_id = item.get("Id") or item.get("id") or ""
+        events.append(
+            {
+                "id": str(event_id),
+                "title": item.get("Title") or item.get("title") or "",
+                "description": item.get("Description")
+                or item.get("description")
+                or "",
+                "note": item.get("Note") or item.get("note"),
+                "event_type": _normalize_item(
+                    item.get("EventType") or item.get("event_type")
+                ),
+                "times": _normalize_event_times(item.get("Times") or item.get("times")),
+                "teachers": _normalize_items(
+                    item.get("Teachers") or item.get("teachers")
+                ),
+                "rooms": _normalize_items(item.get("Rooms") or item.get("rooms")),
+                "classes": _normalize_items(
+                    item.get("Classes") or item.get("classes")
+                ),
+                "date_changed": item.get("DateChanged")
+                or item.get("date_changed"),
+            }
+        )
+    return events
 
 
 class BakalariClient:
@@ -474,6 +558,48 @@ class BakalariClient:
 
         _timetable = Timetable(lib)
         return await _timetable.fetch_actual(for_date)
+
+    @api_call(
+        label="async_get_events",
+        reauth_reason="get_events",
+        default=[],
+    )
+    async def async_get_events(
+        self,
+        lib,
+        since: datetime | date | None = None,
+    ) -> list[dict[str, Any]]:
+        """Fetch school events (akce) from GET /api/3/events.
+
+        async-bakalari-api 0.10.2 has no Events EndPoint, so we call the
+        authenticated HTTP client directly.
+        """
+        since_date: date | None = None
+        if since is not None:
+            since_date = since.date() if isinstance(since, datetime) else since
+
+        server = (lib.server or "").rstrip("/")
+        url = f"{server}/api/3/events"
+        params: dict[str, str] | None = None
+        if since_date is not None:
+            params = {"from": since_date.strftime("%Y-%m-%d")}
+
+        _LOGGER.debug(
+            "[class=%s module=%s] Fetching events (since=%s url=%s)",
+            self.__class__.__name__,
+            __name__,
+            since_date,
+            url,
+        )
+
+        raw = await lib._api_client.authorized_request(
+            url,
+            method=hdrs.METH_GET,
+            credentials=lib.credentials,
+            refresh_callback=lib.refresh_access_token,
+            params=params,
+        )
+        return _normalize_events_payload(raw)
 
     @api_call(
         label="get_marks_snapshot",

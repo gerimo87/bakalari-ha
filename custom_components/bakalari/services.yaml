@@ -21,3 +21,8 @@ refresh:
   name: Refresh
   description: Request an immediate data refresh from the coordinator.
   fields: {}
+
+refresh_events:
+  name: Refresh events
+  description: Request an immediate refresh of school events (akce).
+  fields: {}

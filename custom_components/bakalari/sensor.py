@@ -10,10 +10,12 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .const import DOMAIN
+from .coordinator_events import BakalariEventsCoordinator
 from .coordinator_marks import BakalariMarksCoordinator
 from .coordinator_messages import BakalariMessagesCoordinator
 from .coordinator_noticeboard import BakalariNoticeboardCoordinator
 from .coordinator_timetable import BakalariTimetableCoordinator
+from .sensor_events import BakalariEventsSensor
 from .sensor_helpers import (
     build_subjects_listener,
     get_child_subjects,
@@ -46,6 +48,7 @@ async def async_setup_entry(
     coord_msgs: BakalariMessagesCoordinator = data.get("messages")
     coord_tt: BakalariTimetableCoordinator = data.get("timetable")
     coord_noticeb: BakalariNoticeboardCoordinator = data.get("noticeboard")
+    coord_events: BakalariEventsCoordinator = data.get("events")
 
     entities = []
     data_now = coord_marks.data or {}
@@ -69,6 +72,8 @@ async def async_setup_entry(
             entities.append(BakalariTimetableSensor(coord_tt, child))
         if coord_noticeb is not None:
             entities.append(BakalariNoticeboardSensor(coord_noticeb, child))
+        if coord_events is not None:
+            entities.append(BakalariEventsSensor(coord_events, child))
 
         # Per-subject sensors
         subjects_dict: dict[str, Any] = get_child_subjects(coord_marks, child)

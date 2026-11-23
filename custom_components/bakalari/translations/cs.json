@@ -39,6 +39,16 @@
       "loading_schools": "Načítání seznamu škol, prosím čekejte..."
     }
   },
+  "entity": {
+    "calendar": {
+      "timetable": {
+        "name": "Rozvrh"
+      },
+      "events": {
+        "name": "Akce"
+      }
+    }
+  },
   "options": {
     "error": {
       "invalid_login": "Neplatné přihlašovací údaje!"
