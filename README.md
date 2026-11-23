@@ -32,7 +32,8 @@ nastaveným senzorem na `Nástěnka`
   - tento senzor stahuje rozvrh na aktuální týden +- 7 dní
 
 - Akce
-  - senzor stahuje školní akce (`GET /api/3/events`) od dnes − 14 dní dál
+  - senzor stahuje školní akce dítěte (`GET /api/3/events/my`) od dnes − 14 dní dál
+    – tedy jen akce relevantní pro přihlášeného žáka/třídu, ne celou školu
   - kalendářová entita `calendar.Akce - <dítě>` zobrazuje akce v HA kalendáři
     (celodenní i časově ohraničené)
 
@@ -281,7 +282,7 @@ Níže je stručný přehled vytvářených entit a jejich stavů/atributů.
     - `total_events_cached`: počet akcí v cache
 
 - Akce – kalendářová entita `calendar.Akce - <dítě>`
-  - Zobrazuje školní akce (exkurze, schůzky, …) stažené z `/api/3/events`
+  - Zobrazuje školní akce (exkurze, schůzky, …) stažené z `/api/3/events/my`
   - Vlastnosti událostí: `start`, `end`, `summary` (název), `description` (typ, popis, učitelé), `location` (místnost)
 
 Poznámky:

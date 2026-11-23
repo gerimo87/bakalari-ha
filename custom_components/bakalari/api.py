@@ -569,7 +569,10 @@ class BakalariClient:
         lib,
         since: datetime | date | None = None,
     ) -> list[dict[str, Any]]:
-        """Fetch school events (akce) from GET /api/3/events.
+        """Fetch school events (akce) for the authenticated child.
+
+        Uses GET /api/3/events/my so results are limited to events involving
+        this student/class, not the whole school calendar (/api/3/events).
 
         async-bakalari-api 0.10.2 has no Events EndPoint, so we call the
         authenticated HTTP client directly.
@@ -579,13 +582,13 @@ class BakalariClient:
             since_date = since.date() if isinstance(since, datetime) else since
 
         server = (lib.server or "").rstrip("/")
-        url = f"{server}/api/3/events"
+        url = f"{server}/api/3/events/my"
         params: dict[str, str] | None = None
         if since_date is not None:
             params = {"from": since_date.strftime("%Y-%m-%d")}
 
         _LOGGER.debug(
-            "[class=%s module=%s] Fetching events (since=%s url=%s)",
+            "[class=%s module=%s] Fetching my events (since=%s url=%s)",
             self.__class__.__name__,
             __name__,
             since_date,
