@@ -26,3 +26,13 @@ refresh_events:
   name: Refresh events
   description: Request an immediate refresh of school events (akce).
   fields: {}
+
+refresh_homeworks:
+  name: Refresh homeworks
+  description: Request an immediate refresh of homeworks (úkoly).
+  fields: {}
+
+refresh_payments:
+  name: Refresh payments
+  description: Request an immediate refresh of class-fund balance and payments.
+  fields: {}

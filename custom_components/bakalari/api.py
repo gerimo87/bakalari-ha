@@ -128,6 +128,127 @@ def _normalize_events_payload(raw: Any) -> list[dict[str, Any]]:
     return events
 
 
+def _normalize_attachments(raw: Any) -> list[dict[str, Any]]:
+    """Normalize homework attachments list."""
+    if not isinstance(raw, list):
+        return []
+    out: list[dict[str, Any]] = []
+    for item in raw:
+        if not isinstance(item, dict):
+            continue
+        out.append(
+            {
+                "id": str(item.get("Id") or item.get("id") or ""),
+                "name": item.get("Name") or item.get("name") or "",
+                "type": item.get("Type") or item.get("type") or "",
+                "size": item.get("Size") or item.get("size") or 0,
+            }
+        )
+    return out
+
+
+def _normalize_homeworks_payload(raw: Any) -> list[dict[str, Any]]:
+    """Parse /api/3/homeworks JSON into normalized homework dicts."""
+    if not isinstance(raw, dict):
+        return []
+    items_raw = raw.get("Homeworks") or raw.get("homeworks") or []
+    if not isinstance(items_raw, list):
+        return []
+
+    homeworks: list[dict[str, Any]] = []
+    for item in items_raw:
+        if not isinstance(item, dict):
+            continue
+        hw_id = item.get("ID") or item.get("Id") or item.get("id") or ""
+        homeworks.append(
+            {
+                "id": str(hw_id),
+                "date_start": item.get("DateStart") or item.get("date_start"),
+                "date_end": item.get("DateEnd") or item.get("date_end"),
+                "content": item.get("Content") or item.get("content") or "",
+                "notice": item.get("Notice") or item.get("notice") or "",
+                "done": bool(item.get("Done", item.get("done", False))),
+                "closed": bool(item.get("Closed", item.get("closed", False))),
+                "finished": bool(item.get("Finished", item.get("finished", False))),
+                "electronic": bool(
+                    item.get("Electronic", item.get("electronic", False))
+                ),
+                "hour": item.get("Hour", item.get("hour")),
+                "subject": _normalize_item(
+                    item.get("Subject") or item.get("subject")
+                ),
+                "teacher": _normalize_item(
+                    item.get("Teacher") or item.get("teacher")
+                ),
+                "school_class": _normalize_item(
+                    item.get("Class") or item.get("school_class")
+                ),
+                "group": _normalize_item(item.get("Group") or item.get("group")),
+                "attachments": _normalize_attachments(
+                    item.get("Attachments") or item.get("attachments")
+                ),
+            }
+        )
+    return homeworks
+
+
+def _normalize_payments_summary(raw: Any) -> dict[str, Any] | None:
+    """Parse /api/3/payments/classfund/summary JSON."""
+    if not isinstance(raw, dict):
+        return None
+    balance = raw.get("Balance", raw.get("balance"))
+    spent = raw.get("Spent", raw.get("spent"))
+    try:
+        balance_f = float(balance) if balance is not None else None
+    except (TypeError, ValueError):
+        balance_f = None
+    try:
+        spent_f = float(spent) if spent is not None else None
+    except (TypeError, ValueError):
+        spent_f = None
+    return {
+        "student_name_with_class": raw.get("StudentNameWithClass")
+        or raw.get("student_name_with_class")
+        or "",
+        "balance": balance_f,
+        "spent": spent_f,
+    }
+
+
+def _normalize_payments_list(raw: Any) -> list[dict[str, Any]]:
+    """Parse /api/3/payments/classfund monthly movements (flattened recent items)."""
+    if not isinstance(raw, dict):
+        return []
+    months = raw.get("MonthlyData") or raw.get("monthly_data") or []
+    if not isinstance(months, list):
+        return []
+
+    items: list[dict[str, Any]] = []
+    for month in months:
+        if not isinstance(month, dict):
+            continue
+        month_date = month.get("Date") or month.get("date")
+        for entry in month.get("Items") or month.get("items") or []:
+            if not isinstance(entry, dict):
+                continue
+            amount = entry.get("Amount", entry.get("amount"))
+            try:
+                amount_f = float(amount) if amount is not None else None
+            except (TypeError, ValueError):
+                amount_f = None
+            items.append(
+                {
+                    "month": month_date,
+                    "description": entry.get("Description")
+                    or entry.get("description")
+                    or "",
+                    "date": entry.get("Date") or entry.get("date"),
+                    "amount": amount_f,
+                }
+            )
+    return items
+
+
 class BakalariClient:
     """API client for Bakalari."""
 
@@ -603,6 +724,101 @@ class BakalariClient:
             params=params,
         )
         return _normalize_events_payload(raw)
+
+    @api_call(
+        label="async_get_homeworks",
+        reauth_reason="get_homeworks",
+        default=[],
+    )
+    async def async_get_homeworks(
+        self,
+        lib,
+        date_from: datetime | date | None = None,
+        date_to: datetime | date | None = None,
+    ) -> list[dict[str, Any]]:
+        """Fetch homeworks from GET /api/3/homeworks."""
+        from_date: date | None = None
+        to_date: date | None = None
+        if date_from is not None:
+            from_date = (
+                date_from.date() if isinstance(date_from, datetime) else date_from
+            )
+        if date_to is not None:
+            to_date = date_to.date() if isinstance(date_to, datetime) else date_to
+
+        server = (lib.server or "").rstrip("/")
+        url = f"{server}/api/3/homeworks"
+        params: dict[str, str] = {}
+        if from_date is not None:
+            params["from"] = from_date.strftime("%Y-%m-%d")
+        if to_date is not None:
+            params["to"] = to_date.strftime("%Y-%m-%d")
+
+        _LOGGER.debug(
+            "[class=%s module=%s] Fetching homeworks (from=%s to=%s)",
+            self.__class__.__name__,
+            __name__,
+            from_date,
+            to_date,
+        )
+
+        raw = await lib._api_client.authorized_request(
+            url,
+            method=hdrs.METH_GET,
+            credentials=lib.credentials,
+            refresh_callback=lib.refresh_access_token,
+            params=params or None,
+        )
+        return _normalize_homeworks_payload(raw)
+
+    @api_call(
+        label="async_get_payments_summary",
+        reauth_reason="get_payments_summary",
+        default=None,
+    )
+    async def async_get_payments_summary(self, lib) -> dict[str, Any] | None:
+        """Fetch class-fund balance from GET /api/3/payments/classfund/summary."""
+        server = (lib.server or "").rstrip("/")
+        url = f"{server}/api/3/payments/classfund/summary"
+
+        _LOGGER.debug(
+            "[class=%s module=%s] Fetching payments summary",
+            self.__class__.__name__,
+            __name__,
+        )
+
+        raw = await lib._api_client.authorized_request(
+            url,
+            method=hdrs.METH_GET,
+            credentials=lib.credentials,
+            refresh_callback=lib.refresh_access_token,
+        )
+        return _normalize_payments_summary(raw)
+
+    @api_call(
+        label="async_get_payments_list",
+        reauth_reason="get_payments_list",
+        default=[],
+    )
+    async def async_get_payments_list(self, lib) -> list[dict[str, Any]]:
+        """Fetch class-fund movements from GET /api/3/payments/classfund."""
+        server = (lib.server or "").rstrip("/")
+        url = f"{server}/api/3/payments/classfund"
+
+        _LOGGER.debug(
+            "[class=%s module=%s] Fetching payments list",
+            self.__class__.__name__,
+            __name__,
+        )
+
+        raw = await lib._api_client.authorized_request(
+            url,
+            method=hdrs.METH_GET,
+            credentials=lib.credentials,
+            refresh_callback=lib.refresh_access_token,
+            params={"sort": "desc"},
+        )
+        return _normalize_payments_list(raw)
 
     @api_call(
         label="get_marks_snapshot",

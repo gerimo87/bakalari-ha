@@ -37,6 +37,14 @@ nastaveným senzorem na `Nástěnka`
   - kalendářová entita `calendar.Akce - <dítě>` zobrazuje akce v HA kalendáři
     (celodenní i časově ohraničené)
 
+- Úkoly
+  - senzor stahuje domácí úkoly (`GET /api/3/homeworks`) za okno dnes − 14 / + 30 dní
+  - stav = počet otevřených (neclosed) úkolů; v atributech kompletní seznam
+
+- Platby
+  - senzor zobrazuje zůstatek třídního fondu (`GET /api/3/payments/classfund/summary`)
+  - jednotka CZK; v atributech `spent` a poslední pohyby z `/payments/classfund`
+
 - Známky
   - každý předmět má nyní svůj vlastní senzor
   - lze podepisovat známky - buď jednotlivě u každé známky nebo hromadně v záhlaví Lovelace karty\
@@ -161,6 +169,12 @@ action:
 - `bakalari.refresh_events`
   - Popis: Okamžitě obnoví data školních akcí.
 
+- `bakalari.refresh_homeworks`
+  - Popis: Okamžitě obnoví data domácích úkolů.
+
+- `bakalari.refresh_payments`
+  - Popis: Okamžitě obnoví zůstatek a pohyby třídního fondu.
+
 Příklady volání:
 ```yaml
 service: bakalari.mark_as_seen
@@ -195,6 +209,14 @@ Využij v Dev Tools → WebSocket, nebo z vlastních frontend karet.
   - Payload: `config_entry_id` (string), `child_key` (volitelné), `limit` (volitelné, default 50)
   - Výsledek: `{ "items": [ ... ] }` – seznam školních akcí.
 
+- `bakalari/get_homeworks`
+  - Payload: `config_entry_id` (string), `child_key` (volitelné), `limit` (volitelné, default 50)
+  - Výsledek: `{ "items": [ ... ] }` – seznam domácích úkolů.
+
+- `bakalari/get_payments`
+  - Payload: `config_entry_id` (string), `child_key` (volitelné), `limit` (volitelné, default 20)
+  - Výsledek: `{ "summary": {...}, "items": [ ... ] }` – zůstatek + pohyby.
+
 Příklad požadavku/odpovědi:
 ```json
 { "id": 1, "type": "bakalari/get_marks", "config_entry_id": "<entry_id>", "limit": 25 }
@@ -209,6 +231,8 @@ Příklad požadavku/odpovědi:
 - Zprávy: klíč `scan_interval_messages` (sekundy), výchozí 3600 s. Také s jitterem ±10 %.
 - Rozvrh: klíč `scan_interval_timetable` (sekundy), výchozí 21600 s (6 h). Také s jitterem ±10 %.
 - Akce: klíč `scan_interval_events` (sekundy), výchozí 21600 s (6 h). Také s jitterem ±10 %.
+- Úkoly: klíč `scan_interval_homeworks` (sekundy), výchozí 3600 s (1 h). Také s jitterem ±10 %.
+- Platby: klíč `scan_interval_payments` (sekundy), výchozí 21600 s (6 h). Také s jitterem ±10 %.
 
 Poznámky:
 - Intervaly se aplikují per koordinátor. Pokud nejsou klíče v options přítomné, použijí se výchozí hodnoty.
@@ -285,6 +309,14 @@ Níže je stručný přehled vytvářených entit a jejich stavů/atributů.
   - Zobrazuje školní akce (exkurze, schůzky, …) stažené z `/api/3/events/my`
   - Vlastnosti událostí: `start`, `end`, `summary` (název), `description` (typ, popis, učitelé), `location` (místnost)
 
+- Úkoly – `sensor.Úkoly - <dítě>`
+  - Stav: počet otevřených (neclosed) úkolů
+  - Atributy: `homeworks`, `open_count`, `unfinished_count`, `total_homeworks_cached`
+
+- Platby – `sensor.Platby - <dítě>`
+  - Stav: zůstatek třídního fondu (CZK)
+  - Atributy: `balance`, `spent`, `student_name_with_class`, `recent_payments`
+
 Poznámky:
 - Každá známka i zpráva je anotovaná příznakem `is_new` (in-memory per dítě). Po restartu HA se nové položky mohou dočasně chovat jako „nové“, dokud proběhne první diff.
 - Pro potlačení „novosti“ lze použít služby `bakalari.mark_as_seen` a `bakalari.mark_message_as_seen` (viz výše).
@@ -318,6 +350,16 @@ Tyto struktury najdeš v `coordinator.data`. Klíče jsou stabilní API pro senz
   - `events_since`: ISO datum dolní hranice filtru `from`
   - `last_sync_ok`: boolean
   - Položka `event`: `id`, `title`, `description`, `note`, `event_type`, `times` (`whole_day`, `start`, `end`), `teachers`, `rooms`, `classes`, `date_changed`
+
+- Koordinátor úkolů
+  - `homeworks_by_child`: mapování `child_key` → `list[homework]`
+  - `homeworks_from` / `homeworks_to`: ISO datum rozsahu
+  - `last_sync_ok`: boolean
+
+- Koordinátor plateb
+  - `summary_by_child`: mapování `child_key` → `{ balance, spent, student_name_with_class }`
+  - `payments_by_child`: mapování `child_key` → poslední pohyby
+  - `last_sync_ok`: boolean
 
 Doporučení:
 - Pro zobrazování použij `marks_by_child` (již obsahuje `is_new`), pro odvozování novinek v automatizacích se spolehni na události `bakalari_new_mark` a `bakalari_new_message`.

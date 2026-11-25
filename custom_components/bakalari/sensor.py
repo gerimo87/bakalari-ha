@@ -11,9 +11,11 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .const import DOMAIN
 from .coordinator_events import BakalariEventsCoordinator
+from .coordinator_homeworks import BakalariHomeworksCoordinator
 from .coordinator_marks import BakalariMarksCoordinator
 from .coordinator_messages import BakalariMessagesCoordinator
 from .coordinator_noticeboard import BakalariNoticeboardCoordinator
+from .coordinator_payments import BakalariPaymentsCoordinator
 from .coordinator_timetable import BakalariTimetableCoordinator
 from .sensor_events import BakalariEventsSensor
 from .sensor_helpers import (
@@ -21,6 +23,7 @@ from .sensor_helpers import (
     get_child_subjects,
     seed_created_subjects_from_data,
 )
+from .sensor_homeworks import BakalariHomeworksSensor
 from .sensor_marks import (
     BakalariIndexHelperSensor,
     BakalariLastMarkSensor,
@@ -29,6 +32,7 @@ from .sensor_marks import (
 )
 from .sensor_messages import BakalariMessagesSensor
 from .sensor_noticeboard import BakalariNoticeboardSensor
+from .sensor_payments import BakalariPaymentsSensor
 from .sensor_timetable import BakalariTimetableSensor
 
 _LOGGER = logging.getLogger(__name__)
@@ -49,6 +53,8 @@ async def async_setup_entry(
     coord_tt: BakalariTimetableCoordinator = data.get("timetable")
     coord_noticeb: BakalariNoticeboardCoordinator = data.get("noticeboard")
     coord_events: BakalariEventsCoordinator = data.get("events")
+    coord_homeworks: BakalariHomeworksCoordinator = data.get("homeworks")
+    coord_payments: BakalariPaymentsCoordinator = data.get("payments")
 
     entities = []
     data_now = coord_marks.data or {}
@@ -74,6 +80,10 @@ async def async_setup_entry(
             entities.append(BakalariNoticeboardSensor(coord_noticeb, child))
         if coord_events is not None:
             entities.append(BakalariEventsSensor(coord_events, child))
+        if coord_homeworks is not None:
+            entities.append(BakalariHomeworksSensor(coord_homeworks, child))
+        if coord_payments is not None:
+            entities.append(BakalariPaymentsSensor(coord_payments, child))
 
         # Per-subject sensors
         subjects_dict: dict[str, Any] = get_child_subjects(coord_marks, child)

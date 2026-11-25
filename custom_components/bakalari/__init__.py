@@ -18,9 +18,11 @@ from .api import BakalariClient
 from .children import ChildrenIndex
 from .const import DOMAIN, MANUFACTURER, MODEL, PLATFORMS, SW_VERSION
 from .coordinator_events import BakalariEventsCoordinator
+from .coordinator_homeworks import BakalariHomeworksCoordinator
 from .coordinator_marks import BakalariMarksCoordinator
 from .coordinator_messages import BakalariMessagesCoordinator
 from .coordinator_noticeboard import BakalariNoticeboardCoordinator
+from .coordinator_payments import BakalariPaymentsCoordinator
 from .coordinator_timetable import BakalariTimetableCoordinator
 from .utils import device_ident
 
@@ -146,6 +148,12 @@ def _register_services(hass: HomeAssistant, entry: ConfigEntry) -> None:
     async def _srv_refresh_events(call) -> None:  # noqa: ARG001
         await hass.data[DOMAIN][entry.entry_id]["events"].async_refresh()
 
+    async def _srv_refresh_homeworks(call) -> None:  # noqa: ARG001
+        await hass.data[DOMAIN][entry.entry_id]["homeworks"].async_refresh()
+
+    async def _srv_refresh_payments(call) -> None:  # noqa: ARG001
+        await hass.data[DOMAIN][entry.entry_id]["payments"].async_refresh()
+
     async def _srv_sign_marks(call) -> None:
         child_key = call.data["child_key"]
         coord: BakalariMarksCoordinator = hass.data[DOMAIN][entry.entry_id]["marks"]
@@ -163,6 +171,8 @@ def _register_services(hass: HomeAssistant, entry: ConfigEntry) -> None:
     hass.services.async_register(DOMAIN, "refresh_messages", _srv_refresh_messages)
     hass.services.async_register(DOMAIN, "refresh_timetable", _srv_refresh_timetable)
     hass.services.async_register(DOMAIN, "refresh_events", _srv_refresh_events)
+    hass.services.async_register(DOMAIN, "refresh_homeworks", _srv_refresh_homeworks)
+    hass.services.async_register(DOMAIN, "refresh_payments", _srv_refresh_payments)
     hass.services.async_register(DOMAIN, "sign_all_marks", _srv_sign_marks)
 
 
@@ -241,6 +251,48 @@ def _register_websocket(hass: HomeAssistant, entry: ConfigEntry) -> None:
 
     websocket_api.async_register_command(hass, ws_get_events)
 
+    @websocket_api.websocket_command(  # type: ignore[attr-defined]
+        {
+            vol.Required("type"): f"{DOMAIN}/get_homeworks",
+            vol.Required("config_entry_id"): str,
+            vol.Optional("child_key"): str,
+            vol.Optional("limit", default=50): int,
+        }
+    )
+    @websocket_api.async_response  # type: ignore[attr-defined]
+    async def ws_get_homeworks(hass_, connection, msg):  # noqa: ANN001
+        ceid = msg["config_entry_id"]
+        limit = msg.get("limit", 50)
+        child_key = msg.get("child_key")
+        data = hass.data[DOMAIN][ceid]["homeworks"].select_homeworks(child_key, limit)
+        connection.send_result(msg["id"], {"items": data})
+
+    websocket_api.async_register_command(hass, ws_get_homeworks)
+
+    @websocket_api.websocket_command(  # type: ignore[attr-defined]
+        {
+            vol.Required("type"): f"{DOMAIN}/get_payments",
+            vol.Required("config_entry_id"): str,
+            vol.Optional("child_key"): str,
+            vol.Optional("limit", default=20): int,
+        }
+    )
+    @websocket_api.async_response  # type: ignore[attr-defined]
+    async def ws_get_payments(hass_, connection, msg):  # noqa: ANN001
+        ceid = msg["config_entry_id"]
+        limit = msg.get("limit", 20)
+        child_key = msg.get("child_key")
+        coord = hass.data[DOMAIN][ceid]["payments"]
+        connection.send_result(
+            msg["id"],
+            {
+                "summary": coord.select_summary(child_key),
+                "items": coord.select_payments(child_key, limit),
+            },
+        )
+
+    websocket_api.async_register_command(hass, ws_get_payments)
+
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up of Bakalari component."""
@@ -269,6 +321,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         hass, entry, children, _clients
     )
     coord_events = BakalariEventsCoordinator(hass, entry, children, _clients)
+    coord_homeworks = BakalariHomeworksCoordinator(hass, entry, children, _clients)
+    coord_payments = BakalariPaymentsCoordinator(hass, entry, children, _clients)
 
     hass.data.setdefault(DOMAIN, {})
     hass.data[DOMAIN][entry.entry_id] = {
@@ -279,6 +333,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         "timetable": coord_tt,
         "noticeboard": coord_noticeboard,
         "events": coord_events,
+        "homeworks": coord_homeworks,
+        "payments": coord_payments,
     }
 
     # Do the first refresh in parallel
@@ -288,6 +344,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         coord_tt.async_config_entry_first_refresh(),
         coord_noticeboard.async_config_entry_first_refresh(),
         coord_events.async_config_entry_first_refresh(),
+        coord_homeworks.async_config_entry_first_refresh(),
+        coord_payments.async_config_entry_first_refresh(),
     )
 
     # Device Registry
